@@ -2,6 +2,13 @@
 var Buffer = require('buffer').Buffer
 var crypto = require('crypto')
 var hydration = require('hydration')
+var DEFAULTS = {
+  algorithm:'aes-128-cbc',
+  saltBytes: 16,
+  keyBytes: 16,
+  iterations: 10000,
+  digest: 'sha256'
+}
 
 exports = module.exports = passwordBased
 exports.custom = custom
@@ -52,6 +59,10 @@ function custom (opts) {
 }
 
 function passwordBased (opts) {
+  for (var p in DEFAULTS) {
+    opts[p] = p in opts ? opts[p] : DEFAULTS[p]
+  }
+
   assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
   assert(typeof opts.keyBytes === 'number', 'Expected number "keyBytes"')
   assert(typeof opts.iterations === 'number', 'Expected number "iterations"')

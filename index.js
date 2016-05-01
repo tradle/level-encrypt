@@ -2,16 +2,26 @@
 var Buffer = require('buffer').Buffer
 var crypto = require('crypto')
 var hydration = require('hydration')
-var DEFAULTS = {
-  algorithm:'aes-128-cbc',
-  saltBytes: 16,
-  keyBytes: 16,
-  iterations: 10000,
-  digest: 'sha256'
+
+// opts from SQLCipher: https://www.zetetic.net/sqlcipher/design/
+var DEFAULT_OPTS = {
+  // key derivation parameters
+  saltBytes: 32,
+  digest: 'sha256',
+  keyBytes: 32,
+  iterations: 64000,
+  // encryption parameters
+  algorithm:'aes-256-cbc',
+  ivBytes: 16,
+  password: null
 }
 
 exports = module.exports = passwordBased
 exports.custom = custom
+exports.encrypt = encrypt
+exports.decrypt = decrypt
+exports.dehydrate = dehydrate
+exports.hydrate = hydrate
 
 function custom (opts) {
   assert(typeof opts.encrypt === 'function', 'Expected function "encrypt"')
@@ -32,8 +42,7 @@ function custom (opts) {
   }
 
   function dehydrateAndEncrypt (entity, cb) {
-    var data = hydration.dehydrate(entity)
-    data = new Buffer(JSON.stringify(data))
+    var data = dehydrate(entity)
     if (cb) {
       encrypt(data, onEncrypted)
     } else {
@@ -53,14 +62,15 @@ function custom (opts) {
     }
 
     function onDecrypted (err, plaintext) {
-      return maybeAsync(err, err ? null : hydration.hydrate(plaintext), cb)
+      return maybeAsync(err, err ? null : hydrate(plaintext), cb)
     }
   }
 }
 
-function passwordBased (opts) {
-  for (var p in DEFAULTS) {
-    opts[p] = p in opts ? opts[p] : DEFAULTS[p]
+function passwordBased (_opts) {
+  var opts = {}
+  for (var p in DEFAULT_OPTS) {
+    opts[p] = p in _opts ? _opts[p] : DEFAULT_OPTS[p]
   }
 
   assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
@@ -81,8 +91,8 @@ function passwordBased (opts) {
 }
 
 function encrypt (data, opts) {
-  var salt = crypto.randomBytes(opts.saltBytes)
-  var iv = crypto.randomBytes(opts.ivBytes)
+  var salt = opts.salt || crypto.randomBytes(opts.saltBytes)
+  var iv = opts.iv || crypto.randomBytes(opts.ivBytes)
   var key = crypto.pbkdf2Sync(opts.password, salt, opts.iterations, opts.keyBytes, opts.digest)
   var cipher = crypto.createCipheriv(opts.algorithm, key, iv)
   var ciphertext = Buffer.concat([cipher.update(data), cipher.final()])
@@ -106,6 +116,15 @@ function decrypt (data, opts) {
   var m = decipher.update(parts[2])
   data = Buffer.concat([m, decipher.final()]).toString()
   return JSON.parse(data)
+}
+
+function hydrate (entity) {
+  return hydration.hydrate(entity)
+}
+
+function dehydrate (entity) {
+  var data = hydration.dehydrate(entity)
+  return new Buffer(JSON.stringify(data))
 }
 
 function serialize (buffers) {

@@ -16,7 +16,15 @@ var passwordBased = encryption({
 })
 
 var dbPath = 'some.db'
-var db = encryptedDB(dbPath)
+var db = levelup(dbPath, {
+  db: memdown,
+  // you might want to at least hash keys
+  keyEncoding: {
+    encode: sha256
+  },
+  valueEncoding: passwordBased.valueEncoding
+})
+
 var key = 'ho'
 var val = { hey: 'ho' }
 db.put(key, val, function (err) {
@@ -44,17 +52,6 @@ function sha256 (key) {
   return crypto.createHash('sha256')
     .update(key)
     .digest('base64')
-}
-
-function encryptedDB (path) {
-  return levelup(path, {
-    db: memdown,
-    // you might want to at least hash keys
-    keyEncoding: {
-      encode: sha256
-    },
-    valueEncoding: passwordBased.valueEncoding
-  })
 }
 
 function rawDB (path) {

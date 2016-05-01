@@ -4,14 +4,16 @@ var memdown = require('memdown')
 var encryption = require('./')
 
 var passwordBased = encryption({
-  keyBytes: 32,
+  // key derivation parameters
   saltBytes: 32,
-  ivBytes: 16,
   digest: 'sha256',
-  algorithm: 'aes-256-cbc',
+  keyBytes: 32,
   // iterations for pbkdf2Sync used to derive the encryption key from the password
   iterations: 100000,
-  // yes, this one's taken, move along
+  // encryption parameters
+  algorithm:'aes-256-cbc',
+  ivBytes: 16,
+  // tip: this password is crap
   password: 'oogabooga'
 })
 

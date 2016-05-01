@@ -15,6 +15,7 @@ function custom (opts) {
   return {
     encrypt: dehydrateAndEncrypt,
     decrypt: decryptAndHydrate,
+    // pass in to levelup
     valueEncoding: {
       encode: dehydrateAndEncrypt,
       decode: decryptAndHydrate,
@@ -26,7 +27,6 @@ function custom (opts) {
   function dehydrateAndEncrypt (entity, cb) {
     var data = hydration.dehydrate(entity)
     data = new Buffer(JSON.stringify(data))
-
     if (cb) {
       encrypt(data, onEncrypted)
     } else {
@@ -34,11 +34,7 @@ function custom (opts) {
     }
 
     function onEncrypted (err, ciphertext) {
-      if (cb) {
-        cb(err, ciphertext)
-      } else {
-        return ciphertext
-      }
+      return maybeAsync(err, ciphertext, cb)
     }
   }
 
@@ -50,11 +46,7 @@ function custom (opts) {
     }
 
     function onDecrypted (err, plaintext) {
-      if (cb) {
-        cb(err, plaintext)
-      } else {
-        return hydration.hydrate(plaintext)
-      }
+      return maybeAsync(err, err ? null : hydration.hydrate(plaintext), cb)
     }
   }
 }
@@ -138,4 +130,12 @@ function unserialize (buf) {
 
 function assert (statement, errMsg) {
   if (!statement) throw new Error(errMsg || 'Assertion failed')
+}
+
+function maybeAsync (err, val, cb) {
+  if (cb) {
+    cb(err, val)
+  } else {
+    return val
+  }
 }

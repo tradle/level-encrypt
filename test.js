@@ -1,4 +1,5 @@
 
+var crypto = require('crypto')
 var test = require('tape')
 var levelup = require('levelup')
 var memdown = require('memdown')
@@ -17,6 +18,10 @@ test('encrypt/decrypt', function (t) {
   })
 
   var db = newDB({
+    // you might want to at least hash keys
+    keyEncoding: {
+      encode: sha256
+    },
     valueEncoding: passwordBased.valueEncoding
   })
 
@@ -36,7 +41,7 @@ test('encrypt/decrypt', function (t) {
           valueEncoding: 'binary'
         })
 
-        db.get(key, function (err, ciphertext) {
+        db.get(sha256(key), function (err, ciphertext) {
           if (err) throw err
 
           t.ok(ciphertext.length > 16 + 32) // at least bigger than iv + salt
@@ -52,4 +57,10 @@ function newDB (opts) {
   opts = opts || {}
   opts.db = opts.db || memdown
   return levelup('blah' + (DB_COUNTER++), opts)
+}
+
+function sha256 (key) {
+  return crypto.createHash('sha256')
+    .update(key)
+    .digest('base64')
 }

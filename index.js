@@ -105,7 +105,6 @@ function encrypt (data, opts) {
   return serialize(parts)
 }
 
-// string to entity
 function decrypt (data, opts) {
   var parts = unserialize(data)
   var salt = parts[0]

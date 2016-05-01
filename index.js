@@ -80,6 +80,10 @@ function passwordBased (_opts) {
   assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
   assert(typeof opts.digest === 'string', 'Expected string "digest"')
 
+  // don't recalculate key every time
+  opts.salt = crypto.randomBytes(opts.saltBytes)
+  opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
+
   return custom({
     encrypt: function (data) {
       return encrypt(data, opts)
@@ -93,7 +97,7 @@ function passwordBased (_opts) {
 function encrypt (data, opts) {
   var salt = opts.salt || crypto.randomBytes(opts.saltBytes)
   var iv = opts.iv || crypto.randomBytes(opts.ivBytes)
-  var key = crypto.pbkdf2Sync(opts.password, salt, opts.iterations, opts.keyBytes, opts.digest)
+  var key = opts.key || crypto.pbkdf2Sync(opts.password, salt, opts.iterations, opts.keyBytes, opts.digest)
   var cipher = crypto.createCipheriv(opts.algorithm, key, iv)
   var ciphertext = Buffer.concat([cipher.update(data), cipher.final()])
   var parts = [
@@ -110,7 +114,13 @@ function decrypt (data, opts) {
   var salt = parts[0]
   var iv = parts[1]
   var ciphertext = parts[2]
-  var key = crypto.pbkdf2Sync(opts.password, salt, opts.iterations, opts.keyBytes, opts.digest)
+  var key
+  if (opts.key && opts.salt && opts.salt.equals(salt)) {
+    key = opts.key
+  } else {
+    key = crypto.pbkdf2Sync(opts.password, salt, opts.iterations, opts.keyBytes, opts.digest)
+  }
+
   var decipher = crypto.createDecipheriv(opts.algorithm, key, iv)
   var m = decipher.update(parts[2])
   data = Buffer.concat([m, decipher.final()]).toString()

@@ -1,5 +1,7 @@
 # level-encrypt
 
+*Note: bulk of code originates from [modeler-leveldb](https://github.com/carlos8f/modeler-leveldb).*
+
 Encryption for levelup. Use raw encrypt/decrypt functions or pass in to a levelup as `valueEncoding`. Performs necessary hydration/dehydration of JSON objects using [hydration](https://github.com/carlos8f/hydration).
 
 # Usage

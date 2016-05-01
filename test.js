@@ -53,6 +53,41 @@ test('encrypt/decrypt', function (t) {
   })
 })
 
+test('open / close', function (t) {
+  var dbPath = 'blah.db' + (DB_COUNTER++)
+  var db = makeDB()
+
+  var key = 'ho'
+  var val = { hey: 'ho' }
+  db.put(key, val, function (err) {
+    if (err) throw err
+
+    db.close(function () {
+      db = makeDB()
+      db.get(key, function (err, val1) {
+        if (err) throw err
+
+        t.same(val, val1)
+        t.end()
+      })
+    })
+  })
+
+  function makeDB () {
+    var passwordBased = encryption({
+      password: 'ooga'
+    })
+
+    return levelup(dbPath, {
+      db: memdown,
+      keyEncoding: {
+        encode: sha256
+      },
+      valueEncoding: passwordBased.valueEncoding
+    })
+  }
+})
+
 function newDB (opts) {
   opts = opts || {}
   opts.db = opts.db || memdown

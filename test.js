@@ -25,15 +25,15 @@ test('encrypt/decrypt', function (t) {
     valueEncoding: passwordBased.valueEncoding
   })
 
-  var key = 'hey'
-  var val = 'ho'
+  var key = 'ho'
+  var val = { hey: 'ho' }
   db.put(key, val, function (err) {
     if (err) throw err
 
     db.get(key, function (err, v) {
       if (err) throw err
 
-      t.equal(v, val)
+      t.same(v, val)
 
       db.close(function () {
         db = levelup(db.location, {
@@ -45,7 +45,7 @@ test('encrypt/decrypt', function (t) {
           if (err) throw err
 
           t.ok(ciphertext.length > 16 + 32) // at least bigger than iv + salt
-          t.notEqual(ciphertext, val)
+          t.notSame(ciphertext, val)
           t.end()
         })
       })

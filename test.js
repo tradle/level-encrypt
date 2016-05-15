@@ -88,6 +88,58 @@ test('open / close', function (t) {
   }
 })
 
+test('global vs per-item salt', function (t) {
+  t.plan(2)
+
+  var globalSalts = [
+    null,
+    crypto.randomBytes(32)
+  ]
+
+  globalSalts.forEach(function (globalSalt) {
+    var dbPath = 'blah' + (DB_COUNTER++)
+    var passwordBased = encryption({
+      salt: globalSalt,
+      password: 'poop'
+    })
+
+    var db = levelup(dbPath, {
+      db: memdown,
+      valueEncoding: passwordBased.valueEncoding
+    })
+
+    db.put('hey', 'ho', function (err) {
+      if (err) throw err
+
+      db.put('yo', 'yo', function (err) {
+        if (err) throw err
+
+        db.close(function () {
+          var rawDB = levelup(dbPath, {
+            db: memdown
+          })
+
+          rawDB.get('hey', function (err, val1) {
+            if (err) throw err
+
+            rawDB.get('yo', function (err, val2) {
+              if (err) throw err
+
+              var salt1 = encryption._unserialize(val1)[0]
+              var salt2 = encryption._unserialize(val2)[0]
+              if (globalSalt) {
+                t.same(salt1, salt2)
+              } else {
+                t.notSame(salt1, salt2)
+              }
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
 function newDB (opts) {
   opts = opts || {}
   opts.db = opts.db || memdown

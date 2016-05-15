@@ -13,7 +13,8 @@ var DEFAULT_OPTS = {
   // encryption parameters
   algorithm:'aes-256-cbc',
   ivBytes: 16,
-  password: null
+  password: null,
+  salt: null
 }
 
 exports = module.exports = passwordBased
@@ -22,6 +23,7 @@ exports.encrypt = encrypt
 exports.decrypt = decrypt
 exports.dehydrate = dehydrate
 exports.hydrate = hydrate
+exports._unserialize = unserialize // for testing
 
 function custom (opts) {
   assert(typeof opts.encrypt === 'function', 'Expected function "encrypt"')
@@ -80,9 +82,12 @@ function passwordBased (_opts) {
   assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
   assert(typeof opts.digest === 'string', 'Expected string "digest"')
 
-  // don't recalculate key every time
-  opts.salt = crypto.randomBytes(opts.saltBytes)
-  opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
+  // if global salt is provided don't recalculate key every time
+  if (opts.salt) {
+    if (!opts.key) {
+      opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
+    }
+  }
 
   return custom({
     encrypt: function (data) {

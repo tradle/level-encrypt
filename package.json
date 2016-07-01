@@ -9,8 +9,8 @@
   "author": "Mark Vayngrib <mark@tradle.io> (http://github.com/mvayngrib)",
   "license": "MIT",
   "dependencies": {
-    "buffer": "^4.6.0",
-    "hydration": "mvayngrib/hydration"
+    "buffer": "^3.6.0",
+    "hydration": "^1.0.0"
   },
   "devDependencies": {
     "levelup": "^1.3.1",

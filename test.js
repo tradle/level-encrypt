@@ -19,8 +19,7 @@ test('encrypt/decrypt', function (t) {
   })
 
   var keyBased = encryption({
-    key: crypto.randomBytes(32),
-    salt: crypto.randomBytes(32)
+    key: crypto.randomBytes(32)
   })
 
   var encryptors = [
@@ -129,29 +128,16 @@ test('global vs per-item salt', function (t) {
     db.put('hey', 'ho', function (err) {
       if (err) throw err
 
-      db.put('yo', 'yo', function (err) {
-        if (err) throw err
+      db.close(function () {
+        var rawDB = levelup(dbPath, {
+          db: memdown
+        })
 
-        db.close(function () {
-          var rawDB = levelup(dbPath, {
-            db: memdown
-          })
+        rawDB.get('hey', function (err, val1) {
+          if (err) throw err
 
-          rawDB.get('hey', function (err, val1) {
-            if (err) throw err
-
-            rawDB.get('yo', function (err, val2) {
-              if (err) throw err
-
-              var salt1 = encryption._unserialize(val1)[0]
-              var salt2 = encryption._unserialize(val2)[0]
-              if (globalSalt) {
-                t.same(salt1, salt2)
-              } else {
-                t.notSame(salt1, salt2)
-              }
-            })
-          })
+          var unserialized = encryption._unserialize(val1)
+          t.equal(unserialized.length, globalSalt ? 2 : 3)
         })
       })
     })

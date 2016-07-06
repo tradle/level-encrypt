@@ -14,10 +14,11 @@ var DEFAULT_OPTS = {
   algorithm:'aes-256-cbc',
   ivBytes: 16,
   password: null,
-  salt: null
+  salt: null,
+  key: null
 }
 
-exports = module.exports = passwordBased
+exports = module.exports = defaultEncryption
 exports.custom = custom
 exports.encrypt = encrypt
 exports.decrypt = decrypt
@@ -69,25 +70,35 @@ function custom (opts) {
   }
 }
 
-function passwordBased (_opts) {
+function defaultEncryption (_opts) {
   var opts = {}
   for (var p in DEFAULT_OPTS) {
     opts[p] = p in _opts ? _opts[p] : DEFAULT_OPTS[p]
   }
 
-  assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
-  assert(typeof opts.keyBytes === 'number', 'Expected number "keyBytes"')
-  assert(typeof opts.iterations === 'number', 'Expected number "iterations"')
-  assert(typeof opts.password === 'string' || Buffer.isBuffer(opts.password), 'Expected string or Buffer "password"')
-  assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
-  assert(typeof opts.digest === 'string', 'Expected string "digest"')
+  if (opts.key) {
+    assert(Buffer.isBuffer(opts.salt), 'Expected Buffer "salt"')
+  }
 
-  // if global salt is provided don't recalculate key every time
+  if (!opts.key) {
+    assert(typeof opts.keyBytes === 'number', 'Expected number "keyBytes"')
+    assert(typeof opts.iterations === 'number', 'Expected number "iterations"')
+    assert(typeof opts.password === 'string' || Buffer.isBuffer(opts.password), 'Expected string or Buffer "password"')
+    assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
+    assert(typeof opts.digest === 'string', 'Expected string "digest"')
+  }
+
   if (opts.salt) {
+    assert(Buffer.isBuffer(opts.salt), 'Expected Buffer "salt"')
+    // if global salt is provided don't recalculate key every time
     if (!opts.key) {
       opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
     }
+  } else {
+    assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
   }
+
+  assert(typeof opts.ivBytes === 'number', 'Expected number "ivBytes"')
 
   return custom({
     encrypt: function (data) {

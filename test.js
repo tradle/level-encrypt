@@ -3,6 +3,7 @@ var crypto = require('crypto')
 var test = require('tape')
 var levelup = require('levelup')
 var memdown = require('memdown')
+var series = require('run-series')
 var encryption = require('./')
 var DB_COUNTER = 0
 
@@ -17,39 +18,56 @@ test('encrypt/decrypt', function (t) {
     password: 'ooga'
   })
 
-  var db = newDB({
-    // you might want to at least hash keys
-    keyEncoding: {
-      encode: sha256
-    },
-    valueEncoding: passwordBased.valueEncoding
+  var keyBased = encryption({
+    key: crypto.randomBytes(32),
+    salt: crypto.randomBytes(32)
   })
 
-  var key = 'ho'
-  var val = { hey: 'ho' }
-  db.put(key, val, function (err) {
-    if (err) throw err
+  var encryptors = [
+    passwordBased,
+    keyBased
+  ]
 
-    db.get(key, function (err, v) {
-      if (err) throw err
+  series(encryptors.map(function (encryptor) {
+    return function (cb) {
+      var db = newDB({
+        // you might want to at least hash keys
+        keyEncoding: {
+          encode: sha256
+        },
+        valueEncoding: encryptor.valueEncoding
+      })
 
-      t.same(v, val)
+      var key = 'ho'
+      var val = { hey: 'ho' }
+      db.put(key, val, function (err) {
+        if (err) throw err
 
-      db.close(function () {
-        db = levelup(db.location, {
-          db: memdown,
-          valueEncoding: 'binary'
-        })
-
-        db.get(sha256(key), function (err, ciphertext) {
+        db.get(key, function (err, v) {
           if (err) throw err
 
-          t.ok(ciphertext.length > 16 + 32) // at least bigger than iv + salt
-          t.notSame(ciphertext, val)
-          t.end()
+          t.same(v, val)
+
+          db.close(function () {
+            db = levelup(db.location, {
+              db: memdown,
+              valueEncoding: 'binary'
+            })
+
+            db.get(sha256(key), function (err, ciphertext) {
+              if (err) throw err
+
+              t.ok(ciphertext.length > 16 + 32) // at least bigger than iv + salt
+              t.notSame(ciphertext, val)
+              cb()
+            })
+          })
         })
       })
-    })
+    }
+  }), function (err) {
+    t.error(err)
+    t.end()
   })
 })
 

@@ -3,69 +3,57 @@ var crypto = require('crypto')
 var test = require('tape')
 var levelup = require('levelup')
 var memdown = require('memdown')
+var updown = require('level-updown')
 var series = require('run-series')
 var encryption = require('./')
 var DB_COUNTER = 0
 
 test('encrypt/decrypt', function (t) {
-  var passwordBased = encryption({
+  var passwordBased = {
     keyBytes: 32,
     saltBytes: 32,
     ivBytes: 16,
     digest: 'sha256',
     algorithm: 'aes-256-cbc',
-    iterations: 100000,
+    iterations: 10000,
     password: 'ooga'
-  })
+  }
 
-  var keyBased = encryption({
+  var keyBased = {
     key: crypto.randomBytes(32)
-  })
+  }
 
   var encryptors = [
     passwordBased,
     keyBased
   ]
 
-  series(encryptors.map(function (encryptor) {
+  series(encryptors.map(function (encryptionOpts) {
     return function (cb) {
-      var db = newDB({
-        // you might want to at least hash keys
-        keyEncoding: {
-          encode: sha256
-        },
-        valueEncoding: encryptor.valueEncoding
-      })
-
+      var db = newDB()
+      var encrypted = encryption.toEncrypted(db, encryptionOpts)
       var key = 'ho'
       var val = { hey: 'ho' }
-      db.put(key, val, function (err) {
+      encrypted.put(key, val, function (err) {
         if (err) throw err
 
-        db.get(key, function (err, v) {
+        encrypted.get(key, function (err, v) {
           if (err) throw err
 
           t.same(v, val)
+          db.get(sha256(key), function (err, ciphertext) {
+            if (err) throw err
 
-          db.close(function () {
-            db = levelup(db.location, {
-              db: memdown,
-              valueEncoding: 'binary'
-            })
-
-            db.get(sha256(key), function (err, ciphertext) {
-              if (err) throw err
-
-              t.ok(ciphertext.length > 16 + 32) // at least bigger than iv + salt
-              t.notSame(ciphertext, val)
-              cb()
-            })
+            t.ok(ciphertext.length > 16 + 32) // at least bigger than iv + salt
+            t.notSame(ciphertext, val)
+            cb()
           })
         })
       })
     }
   }), function (err) {
-    t.error(err)
+    if (err) throw err
+
     t.end()
   })
 })
@@ -91,22 +79,16 @@ test('open / close', function (t) {
   })
 
   function makeDB () {
-    var passwordBased = encryption({
+    return encryption.toEncrypted(levelup(dbPath, {
+      db: memdown
+    }), {
       password: 'ooga'
-    })
-
-    return levelup(dbPath, {
-      db: memdown,
-      keyEncoding: {
-        encode: sha256
-      },
-      valueEncoding: passwordBased.valueEncoding
     })
   }
 })
 
 test('global vs per-item salt', function (t) {
-  t.plan(2)
+  t.plan(6)
 
   var globalSalts = [
     null,
@@ -115,14 +97,13 @@ test('global vs per-item salt', function (t) {
 
   globalSalts.forEach(function (globalSalt) {
     var dbPath = 'blah' + (DB_COUNTER++)
-    var passwordBased = encryption({
-      salt: globalSalt,
-      password: 'poop'
+    var rawDB = levelup(dbPath, {
+      db: memdown
     })
 
-    var db = levelup(dbPath, {
-      db: memdown,
-      valueEncoding: passwordBased.valueEncoding
+    var db = encryption.toEncrypted(rawDB, {
+      salt: globalSalt,
+      password: 'poop'
     })
 
     db.put('hey', 'ho', function (err) {
@@ -134,8 +115,11 @@ test('global vs per-item salt', function (t) {
         })
 
         rawDB.get('hey', function (err, val1) {
-          if (err) throw err
+          t.ok(err)
+        })
 
+        rawDB.get(sha256('hey'), function (err, val1) {
+          t.error(err)
           var unserialized = encryption._unserialize(val1)
           t.equal(unserialized.length, globalSalt ? 2 : 3)
         })
@@ -144,14 +128,45 @@ test('global vs per-item salt', function (t) {
   })
 })
 
+test('basic', function (t) {
+  var db = newDB()
+  var encrypted = encryption.toEncrypted(db, {
+    key: crypto.randomBytes(32)
+  })
+
+  var hashedKey
+  var encryptedVal
+  db.on('put', function (key, val) {
+    hashedKey = key
+    encryptedVal = val
+  })
+
+  encrypted.put('hey', 'ho', function (err) {
+    if (err) throw err
+
+    encrypted.get('hey', function (err, val) {
+      if (err) throw err
+
+      t.equals(val, 'ho')
+      db.get('hey', function (err, val) {
+        t.ok(err)
+        db.get(hashedKey, function (err, val) {
+          if (err) throw err
+
+          t.same(val, encryptedVal)
+          t.end()
+        })
+      })
+    })
+  })
+})
+
 function newDB (opts) {
-  opts = opts || {}
+  opts = opts || { valueEncoding: 'binary' }
   opts.db = opts.db || memdown
   return levelup('blah' + (DB_COUNTER++), opts)
 }
 
 function sha256 (key) {
-  return crypto.createHash('sha256')
-    .update(key)
-    .digest('base64')
+  return crypto.createHash('sha256').update(key).digest()
 }

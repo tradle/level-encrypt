@@ -2,6 +2,8 @@
 var Buffer = require('buffer').Buffer
 var crypto = require('crypto')
 var hydration = require('hydration')
+var levelup = require('levelup')
+var updown = require('level-updown')
 
 // opts from SQLCipher: https://www.zetetic.net/sqlcipher/design/
 var DEFAULT_PASSWORD_BASED_OPTS = {
@@ -23,93 +25,82 @@ var DEFAULT_KEY_BASED_OPTS = {
   key: null
 }
 
-exports = module.exports = defaultEncryption
-exports.custom = custom
 exports.encrypt = encrypt
 exports.decrypt = decrypt
+exports.hydration = hydration
 exports.dehydrate = dehydrate
 exports.hydrate = hydrate
+exports.toEncrypted = toEncryptedLevelup
 exports._unserialize = unserialize // for testing
 
-function custom (opts) {
-  assert(typeof opts.encrypt === 'function', 'Expected function "encrypt"')
-  assert(typeof opts.decrypt === 'function', 'Expected function "decrypt"')
+function toEncryptedLevelup (db, opts) {
+  var vEncoding = db.options.valueEncoding
+  if (vEncoding !== 'binary' && vEncoding !== 'utf8') {
+    throw new Error('expected "binary" or "utf8" encoded levelup')
+  }
 
-  var encrypt = opts.encrypt
-  var decrypt = opts.decrypt
-  return {
-    encrypt: dehydrateAndEncrypt,
-    decrypt: decryptAndHydrate,
-    // pass in to levelup
+  opts = opts || {}
+  if (!opts.encrypt || !opts.decrypt) {
+    opts = normalizeOpts(opts)
+  }
+
+  var encryptValue = opts.encrypt || function (data) {
+    return encrypt(data, opts)
+  }
+
+  var decryptValue = opts.decrypt || function (data) {
+    return decrypt(data, opts)
+  }
+
+  var hashKey = sha256
+  return levelup({
     valueEncoding: {
-      encode: dehydrateAndEncrypt,
-      decode: decryptAndHydrate,
-      buffer: true,
-      name: 'encryption'
-    }
-  }
-
-  function dehydrateAndEncrypt (entity, cb) {
-    var data = dehydrate(entity)
-    if (cb) {
-      encrypt(data, onEncrypted)
-    } else {
-      return onEncrypted(null, encrypt(data))
-    }
-
-    function onEncrypted (err, ciphertext) {
-      return maybeAsync(err, ciphertext, cb)
-    }
-  }
-
-  function decryptAndHydrate (data, cb) {
-    if (cb) {
-      decrypt(data, onDecrypted)
-    } else {
-      return onDecrypted(null, decrypt(data))
-    }
-
-    function onDecrypted (err, plaintext) {
-      return maybeAsync(err, err ? null : hydrate(plaintext), cb)
-    }
-  }
-}
-
-function defaultEncryption (_opts) {
-  var opts = {}
-  var defaults = _opts.key ? DEFAULT_KEY_BASED_OPTS : DEFAULT_PASSWORD_BASED_OPTS
-  for (var p in defaults) {
-    opts[p] = p in _opts ? _opts[p] : defaults[p]
-  }
-
-  assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
-  assert(typeof opts.ivBytes === 'number', 'Expected number "ivBytes"')
-
-  if (!opts.key) {
-    assert(typeof opts.keyBytes === 'number', 'Expected number "keyBytes"')
-    assert(typeof opts.iterations === 'number', 'Expected number "iterations"')
-    assert(typeof opts.password === 'string' || Buffer.isBuffer(opts.password), 'Expected string or Buffer "password"')
-    assert(typeof opts.digest === 'string', 'Expected string "digest"')
-
-    if (opts.salt) {
-      assert(Buffer.isBuffer(opts.salt), 'Expected Buffer "salt"')
-      // if global salt is provided don't recalculate key every time
-      if (!opts.key) {
-        opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
+      encode: dehydrate,
+      decode: function identity (val) {
+        return val
       }
-    } else {
-      assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
-    }
-  }
-
-  return custom({
-    encrypt: function (data) {
-      return encrypt(data, opts)
     },
-    decrypt: function (data) {
-      return decrypt(data, opts)
+    db: function () {
+      var ud = updown(db)
+      ud.extendWith({
+        preGet: preHashKey,
+        postGet: postGet,
+        preDel: preHashKey,
+        prePut: prePut,
+        preBatch: preBatch
+      })
+
+      return ud
     }
   })
+
+  function preHashKey(key, options, callback, next) {
+    next(hashKey(key), options, callback)
+  }
+
+  function postGet (key, options, err, value, callback, next) {
+    if (!err) value = hydrate(decryptValue(value))
+
+    next(key, options, err, value, callback)
+  }
+
+  function prePut (key, value, options, callback, next) {
+    key = hashKey(key)
+    value = encryptValue(value)
+    next(key, value, options, callback)
+  }
+
+  function preBatch (array, options, callback, next) {
+    for (var i = 0; i < array.length; i++) {
+      var row = array[i]
+      row.key = hashKey(row.key)
+      if (row.type == 'put') {
+        row.value = encryptValue(value)
+      }
+    }
+
+    next(array, options, callback)
+  }
 }
 
 function encrypt (data, opts) {
@@ -145,10 +136,12 @@ function decrypt (data, opts) {
 }
 
 function hydrate (entity) {
+  debugger
   return hydration.hydrate(entity)
 }
 
 function dehydrate (entity) {
+  // if (Buffer.isBuffer(entity)) return entity
   var data = hydration.dehydrate(entity)
   return new Buffer(JSON.stringify(data))
 }
@@ -188,10 +181,36 @@ function assert (statement, errMsg) {
   if (!statement) throw new Error(errMsg || 'Assertion failed')
 }
 
-function maybeAsync (err, val, cb) {
-  if (cb) {
-    cb(err, val)
-  } else {
-    return val
+function sha256 (key) {
+  return crypto.createHash('sha256').update(key).digest()
+}
+
+function normalizeOpts (_opts) {
+  var opts = {}
+  var defaults = _opts.key ? DEFAULT_KEY_BASED_OPTS : DEFAULT_PASSWORD_BASED_OPTS
+  for (var p in defaults) {
+    opts[p] = p in _opts ? _opts[p] : defaults[p]
   }
+
+  assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
+  assert(typeof opts.ivBytes === 'number', 'Expected number "ivBytes"')
+
+  if (!opts.key) {
+    assert(typeof opts.keyBytes === 'number', 'Expected number "keyBytes"')
+    assert(typeof opts.iterations === 'number', 'Expected number "iterations"')
+    assert(typeof opts.password === 'string' || Buffer.isBuffer(opts.password), 'Expected string or Buffer "password"')
+    assert(typeof opts.digest === 'string', 'Expected string "digest"')
+
+    if (opts.salt) {
+      assert(Buffer.isBuffer(opts.salt), 'Expected Buffer "salt"')
+      // if global salt is provided don't recalculate key every time
+      if (!opts.key) {
+        opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
+      }
+    } else {
+      assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
+    }
+  }
+
+  return opts
 }

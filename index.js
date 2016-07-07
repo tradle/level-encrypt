@@ -95,7 +95,7 @@ function toEncryptedLevelup (db, opts) {
       var row = array[i]
       row.key = hashKey(row.key)
       if (row.type == 'put') {
-        row.value = encryptValue(value)
+        row.value = encryptValue(row.value)
       }
     }
 

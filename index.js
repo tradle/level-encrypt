@@ -136,7 +136,6 @@ function decrypt (data, opts) {
 }
 
 function hydrate (entity) {
-  debugger
   return hydration.hydrate(entity)
 }
 

@@ -2,11 +2,9 @@
 
 *Note: bulk of code originates from [modeler-leveldb](https://github.com/carlos8f/modeler-leveldb).*
 
-Encryption for levelup. Use raw encrypt/decrypt functions or pass in to a levelup as `valueEncoding`. Performs necessary hydration/dehydration of JSON objects using [hydration](https://github.com/carlos8f/hydration).
+Encryption for levelup. Performs necessary hydration/dehydration of JSON objects using [hydration](https://github.com/carlos8f/hydration).
 
 # Usage
-
-## Pass in as `valueEncoding`
 
 ```js
 var crypto = require('crypto')
@@ -14,7 +12,7 @@ var levelup = require('levelup')
 var memdown = require('memdown')
 var encryption = require('level-encrypt')
 
-var passwordBased = encryption({
+var encryptionOptions = {
   // key derivation parameters
   saltBytes: 32,
   digest: 'sha256',
@@ -26,18 +24,23 @@ var passwordBased = encryption({
   ivBytes: 16,
   // tip: this password is crap
   password: 'oogabooga'
+  // optionally, pass in key instead of password
+  // key: myKeyBuffer
+}
+
+// for custom encryption options, encryptionOptions should look like this:
+// {
+//   encrypt: Function,
+//   decrypt: Function
+// }
+// 
+
+var dbPath = './encrypted.db'
+var baseDB = levelup(dbPath, {
+  db: memdown
 })
 
-var dbPath = 'some.db'
-var db = levelup(dbPath, {
-  db: memdown,
-  // you might want to at least hash keys
-  keyEncoding: {
-    encode: sha256
-  },
-  valueEncoding: passwordBased.valueEncoding
-})
-
+var db = encryption.toEncrypted(baseDB, encryptionOptions)
 var key = 'ho'
 var val = { hey: 'ho' }
 db.put(key, val, function (err) {
@@ -50,9 +53,7 @@ db.put(key, val, function (err) {
 
     // let's see the ciphertext stored:
     db.close(function () {
-      var raw = rawDB(dbPath)
-
-      raw.get(sha256(key), function (err, ciphertext) {
+      baseDB.get(encryption.keyHashFunction(key), function (err, ciphertext) {
         if (err) throw err
 
         console.log('stored ciphertext (+ salt + iv): ' + ciphertext.toString('base64'))
@@ -60,60 +61,4 @@ db.put(key, val, function (err) {
     })
   })
 })
-
-function sha256 (key) {
-  return crypto.createHash('sha256')
-    .update(key)
-    .digest('base64')
-}
-
-function rawDB (path) {
-  return levelup(path, {
-    db: memdown,
-    valueEncoding: 'binary'
-  })
-}
-```
-
-## Raw, password-based
-
-```js
-var crypto = require('crypto')
-var levelup = require('levelup')
-var memdown = require('memdown')
-var encryption = require('level-encrypt')
-
-var passwordBased = encryption({
-  keyBytes: 32,
-  saltBytes: 32,
-  ivBytes: 16,
-  digest: 'sha256',
-  algorithm: 'aes-256-cbc',
-  // iterations for pbkdf2Sync used to derive the encryption key from the password
-  iterations: 100000,
-  // yes, this one's taken, move along
-  password: 'oogabooga'
-})
-
-var ciphertext = passwordBased.encrypt({ 'something': 'else' })
-var plaintext = passwordBased.decrypt(ciphertext)
-console.log('decrypted: ' + JSON.stringify(plaintext))
-```
-
-## Specify your own encrypt/decrypt
-
-```js
-var encryption = require('level-encrypt')
-var passwordBased = encryption.custom({
-  encrypt: function (data) {
-    // encrypt "data" your own way
-    return data
-  },
-  decrypt: function (data) {
-    // encrypt "data" your own way
-    return data
-  }
-})
-
-// continue as above
 ```

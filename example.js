@@ -3,7 +3,7 @@ var levelup = require('levelup')
 var memdown = require('memdown')
 var encryption = require('./')
 
-var passwordBased = encryption({
+var encryptionOptions = {
   // key derivation parameters
   saltBytes: 32,
   digest: 'sha256',
@@ -15,18 +15,23 @@ var passwordBased = encryption({
   ivBytes: 16,
   // tip: this password is crap
   password: 'oogabooga'
+  // optionally, pass in key instead of password
+  // key: myKeyBuffer
+}
+
+// for custom encryption options, encryptionOptions should look like this:
+// {
+//   encrypt: Function,
+//   decrypt: Function
+// }
+//
+
+var dbPath = './encrypted.db'
+var baseDB = levelup(dbPath, {
+  db: memdown
 })
 
-var dbPath = 'some.db'
-var db = levelup(dbPath, {
-  db: memdown,
-  // you might want to at least hash keys
-  keyEncoding: {
-    encode: sha256
-  },
-  valueEncoding: passwordBased.valueEncoding
-})
-
+var db = encryption.toEncrypted(baseDB, encryptionOptions)
 var key = 'ho'
 var val = { hey: 'ho' }
 db.put(key, val, function (err) {
@@ -39,9 +44,7 @@ db.put(key, val, function (err) {
 
     // let's see the ciphertext stored:
     db.close(function () {
-      var raw = rawDB(dbPath)
-
-      raw.get(sha256(key), function (err, ciphertext) {
+      baseDB.get(encryption.keyHashFunction(key), function (err, ciphertext) {
         if (err) throw err
 
         console.log('stored ciphertext (+ salt + iv): ' + ciphertext.toString('base64'))
@@ -49,16 +52,3 @@ db.put(key, val, function (err) {
     })
   })
 })
-
-function sha256 (key) {
-  return crypto.createHash('sha256')
-    .update(key)
-    .digest('base64')
-}
-
-function rawDB (path) {
-  return levelup(path, {
-    db: memdown,
-    valueEncoding: 'binary'
-  })
-}

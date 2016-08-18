@@ -31,6 +31,7 @@ exports.hydration = hydration
 exports.dehydrate = dehydrate
 exports.hydrate = hydrate
 exports.toEncrypted = toEncryptedLevelup
+exports.keyHashFunction = sha256
 exports._unserialize = unserialize // for testing
 
 function toEncryptedLevelup (db, opts) {
@@ -52,7 +53,7 @@ function toEncryptedLevelup (db, opts) {
     return decrypt(data, opts)
   }
 
-  var hashKey = sha256
+  var hashKey = opts.keyHashFunction || exports.keyHashFunction
   return levelup({
     valueEncoding: {
       encode: dehydrate,

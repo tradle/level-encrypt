@@ -80,7 +80,8 @@ test('open / close', function (t) {
 
   function makeDB () {
     return encryption.toEncrypted(levelup(dbPath, {
-      db: memdown
+      db: memdown,
+      keyEncoding: 'binary'
     }), {
       password: 'ooga'
     })
@@ -98,6 +99,7 @@ test('global vs per-item salt', function (t) {
   globalSalts.forEach(function (globalSalt) {
     var dbPath = 'blah' + (DB_COUNTER++)
     var rawDB = levelup(dbPath, {
+      keyEncoding: 'binary',
       db: memdown
     })
 
@@ -161,8 +163,31 @@ test('basic', function (t) {
   })
 })
 
+test('stream', function (t) {
+  var db = newDB()
+  var encrypted = encryption.toEncrypted(db, {
+    key: crypto.randomBytes(32)
+  })
+
+  encrypted.put('hey', 'ho', function (err) {
+    if (err) throw err
+
+    var data = []
+    encrypted.createValueStream()
+      .on('data', data.push.bind(data))
+      .on('end', function () {
+        t.same(data, ['ho'])
+        t.end()
+      })
+  })
+})
+
 function newDB (opts) {
-  opts = opts || { valueEncoding: 'binary' }
+  opts = opts || {
+    keyEncoding: 'binary',
+    valueEncoding: 'binary'
+  }
+
   opts.db = opts.db || memdown
   return levelup('blah' + (DB_COUNTER++), opts)
 }

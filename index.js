@@ -35,9 +35,14 @@ exports.keyHashFunction = sha256
 exports._unserialize = unserialize // for testing
 
 function toEncryptedLevelup (db, opts) {
+  var kEncoding = db.options.keyEncoding
+  if (kEncoding !== 'binary') {
+    throw new Error('expected "binary" keyEncoding')
+  }
+
   var vEncoding = db.options.valueEncoding
   if (vEncoding !== 'binary' && vEncoding !== 'utf8') {
-    throw new Error('expected "binary" or "utf8" encoded levelup')
+    throw new Error('expected "binary" or "utf8" valueEncoding')
   }
 
   opts = opts || {}
@@ -53,8 +58,9 @@ function toEncryptedLevelup (db, opts) {
     return decrypt(data, opts)
   }
 
-  var hashKey = opts.keyHashFunction || exports.keyHashFunction
+  var rawHashKey = opts.keyHashFunction || exports.keyHashFunction
   return levelup({
+    keyEncoding: db.options.keyEncoding,
     valueEncoding: {
       encode: dehydrate,
       decode: function identity (val) {
@@ -66,6 +72,7 @@ function toEncryptedLevelup (db, opts) {
       ud.extendWith({
         preGet: preHashKey,
         postGet: postGet,
+        postIterator: postIterator,
         preDel: preHashKey,
         prePut: prePut,
         preBatch: preBatch
@@ -75,8 +82,30 @@ function toEncryptedLevelup (db, opts) {
     }
   })
 
+  function hashKey (key) {
+    var hash = rawHashKey(key)
+    if (!Buffer.isBuffer(hash)) hash = new Buffer(hash)
+
+    return hash
+  }
+
+  function postIterator (iterator) {
+    iterator.extendWith({
+      postNext: postNext
+    })
+
+    return iterator
+  }
+
+  function postNext (err, key, value, callback, next) {
+    if (!err && value) value = hydrate(decryptValue(value))
+
+    next(err, key, value, callback)
+  }
+
   function preHashKey(key, options, callback, next) {
-    next(hashKey(key), options, callback)
+    key = hashKey(key)
+    next(key, options, callback)
   }
 
   function postGet (key, options, err, value, callback, next) {

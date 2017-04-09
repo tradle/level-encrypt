@@ -8,21 +8,19 @@ var updown = require('level-updown')
 // opts from SQLCipher: https://www.zetetic.net/sqlcipher/design/
 var DEFAULT_PASSWORD_BASED_OPTS = {
   // key derivation parameters
-  password: null,
   saltBytes: 32,
-  salt: null,
   digest: 'sha256',
   keyBytes: 32,
   iterations: 64000,
   // encryption parameters
-  algorithm:'aes-256-cbc',
-  ivBytes: 16,
+  algorithm: 'aes-256-gcm',
+  ivBytes: 12,
 }
 
 var DEFAULT_KEY_BASED_OPTS = {
-  algorithm:'aes-256-cbc',
-  ivBytes: 16,
-  key: null
+  algorithm: 'aes-256-gcm',
+  ivBytes: 12,
+  keyBytes: 32
 }
 
 exports.encrypt = encrypt
@@ -145,9 +143,11 @@ function encrypt (data, opts) {
   var iv = opts.iv || crypto.randomBytes(opts.ivBytes)
   var cipher = crypto.createCipheriv(opts.algorithm, key, iv)
   var ciphertext = Buffer.concat([cipher.update(data), cipher.final()])
+  var tag = cipher.getAuthTag()
   var parts = [
     iv,
-    ciphertext
+    ciphertext,
+    tag
   ]
 
   if (salt) parts.push(salt)
@@ -159,13 +159,15 @@ function decrypt (data, opts) {
   var parts = unserialize(data)
   var iv = parts[0]
   var ciphertext = parts[1]
-  var salt = parts[2]
+  var tag = parts[2]
+  var salt = parts[3]
   var key = opts.key
   if (!key) {
     key = crypto.pbkdf2Sync(opts.password, salt, opts.iterations, opts.keyBytes, opts.digest)
   }
 
   var decipher = crypto.createDecipheriv(opts.algorithm, key, iv)
+  decipher.setAuthTag(tag)
   var m = decipher.update(parts[1])
   data = Buffer.concat([m, decipher.final()]).toString()
   return JSON.parse(data)
@@ -221,30 +223,33 @@ function sha256 (key) {
 }
 
 function normalizeOpts (_opts) {
-  var opts = {}
-  var defaults = _opts.key ? DEFAULT_KEY_BASED_OPTS : DEFAULT_PASSWORD_BASED_OPTS
-  for (var p in defaults) {
-    opts[p] = p in _opts ? _opts[p] : defaults[p]
+  var opts = {
+    key: _opts.key,
+    salt: _opts.salt,
+    password: _opts.password,
+    iv: _opts.iv
   }
 
-  assert(typeof opts.algorithm === 'string', 'Expected string "algorithm"')
-  assert(typeof opts.ivBytes === 'number', 'Expected number "ivBytes"')
+  var spec = opts.key ? DEFAULT_KEY_BASED_OPTS : DEFAULT_PASSWORD_BASED_OPTS
 
-  if (!opts.key) {
-    assert(typeof opts.keyBytes === 'number', 'Expected number "keyBytes"')
-    assert(typeof opts.iterations === 'number', 'Expected number "iterations"')
-    assert(typeof opts.password === 'string' || Buffer.isBuffer(opts.password), 'Expected string or Buffer "password"')
-    assert(typeof opts.digest === 'string', 'Expected string "digest"')
+  ;['key', 'iv', 'salt'].forEach(function (bufProp) {
+    const val = opts[bufProp]
+    if (!val) return
 
-    if (opts.salt) {
-      assert(Buffer.isBuffer(opts.salt), 'Expected Buffer "salt"')
-      // if global salt is provided don't recalculate key every time
-      if (!opts.key) {
-        opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, opts.iterations, opts.keyBytes, opts.digest)
-      }
-    } else {
-      assert(typeof opts.saltBytes === 'number', 'Expected number "saltBytes"')
+    assert(Buffer.isBuffer(val), `Expected "${bufProp}" to be a Buffer`)
+    var expectedLength = spec[bufProp + 'Bytes']
+    assert(val.length === expectedLength, `Expected ${expectedLength} byte "${bufProp}"`)
+  })
+
+  if (opts.salt) {
+    // if global salt is provided don't recalculate key every time
+    if (!opts.key) {
+      opts.key = crypto.pbkdf2Sync(opts.password, opts.salt, spec.iterations, spec.keyBytes, spec.digest)
     }
+  }
+
+  for (var prop in spec) {
+    opts[prop] = spec[prop]
   }
 
   return opts

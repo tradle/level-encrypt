@@ -12,9 +12,9 @@ test('encrypt/decrypt', function (t) {
   var passwordBased = {
     keyBytes: 32,
     saltBytes: 32,
-    ivBytes: 16,
+    ivBytes: 12,
     digest: 'sha256',
-    algorithm: 'aes-256-cbc',
+    algorithm: 'aes-256-gcm',
     iterations: 10000,
     password: 'ooga'
   }

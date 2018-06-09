@@ -98,7 +98,13 @@ function toEncryptedLevelup (db, opts) {
   }
 
   function postNext (err, key, value, callback, next) {
-    if (!err && value) value = hydrate(decryptValue(value))
+    if (!err && value) {
+      try {
+        value = hydrate(decryptValue(value))
+      } catch (e) {
+        err = e
+      }
+    }
 
     next(err, key, value, callback)
   }
